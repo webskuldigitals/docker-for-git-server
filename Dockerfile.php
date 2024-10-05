@@ -17,6 +17,3 @@ COPY --from=composer:2.7 /usr/bin/composer /usr/bin/composer
 # Fix permissions for the repositories
 RUN chown -R www-data:www-data /var/www/html && \
     chmod -R 775 /var/www/html
-
-# Set the environment variable for port
-ENV PORT=8001

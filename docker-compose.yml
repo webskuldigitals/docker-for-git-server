@@ -250,7 +250,7 @@ services:
             - PMA_PASSWORD=asdf-!@34
         depends_on:
             - database-10
-        
+
     php-1:
         build:
             context: .
