@@ -1,0 +1,79 @@
+# Use Debian Slim as a base image
+FROM debian:bullseye-slim
+
+# Install Apache, Git, and the necessary utilities
+RUN apt-get update && apt-get install -y \
+    apache2 \
+    git \
+    apache2-utils \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY ssl/git.crt /etc/apache2/ssl/git.crt
+COPY ssl/git.key /etc/apache2/ssl/git.key
+COPY ssl/ca.crt /etc/apache2/ssl/ca.crt
+
+# Copy the Apache configuration
+COPY apache.conf /etc/apache2/sites-available/000-default.conf
+
+# Create the Git repository directory and copy the repository
+COPY repositories/nexuskul.git /var/www/git/nexuskul.git
+
+# Loop to copy the repository if it doesn't already exist
+RUN for i in $(seq 8001 8020); do \
+    if [ ! -d "/var/www/git/dev_${i}_org" ]; then \
+    cp -r /var/www/git/nexuskul.git /var/www/git/dev_${i}_org; \
+    fi; \
+    done
+
+# Fix permissions for the repositories
+RUN chown -R www-data:www-data /var/www/git && \
+    chmod -R 775 /var/www/git
+
+# Add post-receive hooks to the bare repositories to push the latest changes to the corresponding working repository
+RUN for i in $(seq 8001 8020); do \
+    bare_repo="/var/www/git/dev_${i}_org/hooks"; \
+    echo '#!/bin/bash' > "$bare_repo/post-receive"; \
+    echo 'repo_number=$(basename $(pwd) | sed '\''s/[^0-9]//g'\'')' >> "$bare_repo/post-receive"; \
+    echo 'TARGET="/var/www/html/dev_${repo_number}_org"' >> "$bare_repo/post-receive"; \
+    echo 'GIT_DIR="/var/www/git/dev_${repo_number}_org"' >> "$bare_repo/post-receive"; \
+    echo 'git --work-tree=$TARGET --git-dir=$GIT_DIR checkout -f' >> "$bare_repo/post-receive"; \
+    chmod +x "$bare_repo/post-receive"; \
+    done
+
+# Loop to copy the repository if it doesn't already exist
+RUN for i in $(seq 8001 8020); do \
+    if [ ! -d "/var/www/html/dev_${i}_org" ]; then \
+    git clone /var/www/git/dev_${i}_org /var/www/html/dev_${i}_org; \
+    git config --global --add safe.directory /var/www/html/dev_${i}_org; \
+    fi; \
+    if [ ! -f /var/www/html/dev_${i}_org/.env ]; then \
+    cp /var/www/html/dev_${i}_org/.env.example /var/www/html/dev_${i}_org/.env; \
+    fi; \
+    done
+
+RUN git config --global user.email "cvcup@gmail.com"
+
+RUN git config --global user.name "Rakesh Kumar"
+
+# Fix permissions for the repositories
+RUN chown -R www-data:www-data /var/www/git && \
+    chmod -R 775 /var/www/git
+
+# Fix permissions for the repositories
+RUN chown -R www-data:www-data /var/www/html && \
+    chmod -R 775 /var/www/html
+
+# Set up HTTP authentication
+RUN htpasswd -cb /etc/apache2/.htpasswd nexuskul nexuskul
+
+# Enable necessary Apache modules
+RUN a2enmod cgi alias env
+
+RUN a2enmod ssl
+
+# Expose port 80
+EXPOSE 443
+
+# Start Apache in the foreground
+CMD ["apache2ctl", "-D", "FOREGROUND"]
