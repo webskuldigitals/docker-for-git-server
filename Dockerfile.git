@@ -1,14 +1,41 @@
 # Use Debian Slim as a base image
 FROM debian:bullseye-slim
 
-# Install Apache, Git, and the necessary utilities
-RUN apt-get update && apt-get install -y \
+# Define port range variable
+ENV PORT_RANGE="8001 8001"
+
+# Install Apache, PHP 8.3 from Sury repository, Git, Node.js, and necessary utilities
+RUN apt-get update && apt-get install -y lsb-release apt-transport-https ca-certificates wget && \
+    wget -qO - https://packages.sury.org/php/apt.gpg | tee /etc/apt/trusted.gpg.d/php.gpg && \
+    echo "deb https://packages.sury.org/php/ $(lsb_release -sc) main" | tee /etc/apt/sources.list.d/php.list && \
+    apt-get update && apt-get install -y \
     apache2 \
+    php8.3 \
+    php8.3-cli \
+    php8.3-mbstring \
+    php8.3-xml \
+    php8.3-curl \
+    php8.3-zip \
+    php8.3-mysql \
+    php8.3-sqlite3 \
+    libapache2-mod-php8.3 \
     git \
     apache2-utils \
+    curl \
+    && curl -fsSL https://deb.nodesource.com/setup_16.x | bash - \
+    && apt-get install -y nodejs \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Composer
+RUN apt-get update && apt-get install -y curl && \
+    curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install pm2 to run multiple processes
+RUN npm install -g pm2
+
+# Copy SSL certificates
 COPY ssl/git.crt /etc/apache2/ssl/git.crt
 COPY ssl/git.key /etc/apache2/ssl/git.key
 COPY ssl/ca.crt /etc/apache2/ssl/ca.crt
@@ -20,9 +47,10 @@ COPY apache.conf /etc/apache2/sites-available/000-default.conf
 COPY repositories/nexuskul.git /var/www/git/nexuskul.git
 
 # Loop to copy the repository if it doesn't already exist
-RUN for i in $(seq 8001 8020); do \
+RUN for i in $(seq $PORT_RANGE); do \
     if [ ! -d "/var/www/git/dev_${i}_org" ]; then \
     cp -r /var/www/git/nexuskul.git /var/www/git/dev_${i}_org; \
+    git config --global --add safe.directory /var/www/git/dev_${i}_org; \
     fi; \
     done
 
@@ -31,7 +59,7 @@ RUN chown -R www-data:www-data /var/www/git && \
     chmod -R 775 /var/www/git
 
 # Add post-receive hooks to the bare repositories to push the latest changes to the corresponding working repository
-RUN for i in $(seq 8001 8020); do \
+RUN for i in $(seq $PORT_RANGE); do \
     bare_repo="/var/www/git/dev_${i}_org/hooks"; \
     echo '#!/bin/bash' > "$bare_repo/post-receive"; \
     echo 'repo_number=$(basename $(pwd) | sed '\''s/[^0-9]//g'\'')' >> "$bare_repo/post-receive"; \
@@ -41,8 +69,8 @@ RUN for i in $(seq 8001 8020); do \
     chmod +x "$bare_repo/post-receive"; \
     done
 
-# Loop to copy the repository if it doesn't already exist
-RUN for i in $(seq 8001 8020); do \
+# Loop to clone the repository if it doesn't already exist
+RUN for i in $(seq $PORT_RANGE); do \
     if [ ! -d "/var/www/html/dev_${i}_org" ]; then \
     git clone /var/www/git/dev_${i}_org /var/www/html/dev_${i}_org; \
     git config --global --add safe.directory /var/www/html/dev_${i}_org; \
@@ -52,28 +80,46 @@ RUN for i in $(seq 8001 8020); do \
     fi; \
     done
 
+# Set up Git user
 RUN git config --global user.email "cvcup@gmail.com"
-
 RUN git config --global user.name "Rakesh Kumar"
 
-# Fix permissions for the repositories
-RUN chown -R www-data:www-data /var/www/git && \
-    chmod -R 775 /var/www/git
+# Fix permissions for the repositories and web directories
+RUN chown -R www-data:www-data /var/www/git && chmod -R 775 /var/www/git
+RUN chown -R www-data:www-data /var/www/html && chmod -R 775 /var/www/html
 
-# Fix permissions for the repositories
-RUN chown -R www-data:www-data /var/www/html && \
-    chmod -R 775 /var/www/html
+# Install Laravel dependencies and generate key
+RUN for i in $(seq $PORT_RANGE); do \
+    if [ -d "/var/www/html/dev_${i}_org" ]; then \
+    cd /var/www/html/dev_${i}_org && composer install --no-interaction --verbose && php artisan key:generate; \
+    fi; \
+    done
+
+# Install Laravel Breeze and run npm install
+RUN for i in $(seq $PORT_RANGE); do \
+    if [ -d "/var/www/html/dev_${i}_org" ]; then \
+    cd /var/www/html/dev_${i}_org && npm install; \
+    fi; \
+    done
+
+# Create a start script to run both npm run dev and php artisan serve using pm2
+RUN for i in $(seq $PORT_RANGE); do \
+    if [ -d "/var/www/html/dev_${i}_org" ]; then \
+    cd /var/www/html/dev_${i}_org && \
+    echo 'pm2 start npm --name "npm_dev_${i}" -- run dev' > start.sh && \
+    echo 'pm2 start php --name "artisan_serve_${i}" -- artisan serve --host=0.0.0.0 --port=8000' >> start.sh && \
+    chmod +x start.sh; \
+    fi; \
+    done
 
 # Set up HTTP authentication
 RUN htpasswd -cb /etc/apache2/.htpasswd nexuskul nexuskul
 
 # Enable necessary Apache modules
-RUN a2enmod cgi alias env
+RUN a2enmod cgi alias env ssl rewrite
 
-RUN a2enmod ssl
+# Expose port 443 for HTTPS
+EXPOSE 443 8000 3000
 
-# Expose port 80
-EXPOSE 443
-
-# Start Apache in the foreground
-CMD ["apache2ctl", "-D", "FOREGROUND"]
+# Start Apache and pm2 in the foreground
+CMD ["sh", "-c", "apache2ctl -D FOREGROUND & for i in $(seq $PORT_RANGE); do cd /var/www/html/dev_${i}_org && ./start.sh; done && pm2 logs"]
