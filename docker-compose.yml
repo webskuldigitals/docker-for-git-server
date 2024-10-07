@@ -12,9 +12,12 @@ services:
         volumes:
             - git-bare:/var/www/git
             - git-data:/var/www/html
+            - ssl-files:/etc/apache2/ssl/
 
 volumes:
     git-bare:
         driver: local
     git-data:
+        driver: local
+    ssl-files:
         driver: local
