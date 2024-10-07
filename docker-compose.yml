@@ -4,11 +4,14 @@ services:
         build:
             context: .
             dockerfile: Dockerfile.git
-        working_dir: /var/www/html/dev_8001_org
+        working_dir: /var/www/
         ports:
             - "443:443"
             - "8000-8020:8000-8020"
             - "3000-3020:3000-3020"
+        volumes:
+            - git-bare:/var/www/git
+            - git-data:/var/www/html
 
 volumes:
     git-bare:

@@ -2,13 +2,13 @@
 FROM debian:bullseye-slim
 
 # Define port range variable
-ENV PORT_RANGE="8000 8001"
+ENV PORT_RANGE="8001 8001"
 
 # Install Apache, PHP 8.3 from Sury repository, Git, Node.js, MySQL, and necessary utilities
 RUN apt-get update && apt-get install -y lsb-release apt-transport-https ca-certificates wget && \
-    wget -O - https://packages.sury.org/php/apt.gpg | tee /etc/apt/trusted.gpg.d/php.gpg && \
+    wget -qO - https://packages.sury.org/php/apt.gpg | tee /etc/apt/trusted.gpg.d/php.gpg && \
     echo "deb https://packages.sury.org/php/ $(lsb_release -sc) main" | tee /etc/apt/sources.list.d/php.list && \
-    apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    apt-get update && apt-get install -y \
     apache2 \
     php8.3 \
     php8.3-cli \
@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y lsb-release apt-transport-https ca-cert
     curl \
     mariadb-server \
     && curl -fsSL https://deb.nodesource.com/setup_16.x | bash - \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs \
+    && apt-get install -y nodejs \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -41,6 +41,8 @@ COPY ssl/git.crt /etc/apache2/ssl/git.crt
 COPY ssl/git.key /etc/apache2/ssl/git.key
 COPY ssl/ca.crt /etc/apache2/ssl/ca.crt
 
+RUN chown -R www-data:www-data /etc/apache2/ssl && chmod -R 775 /etc/apache2/ssl
+
 # Copy the Apache configuration
 COPY apache.conf /etc/apache2/sites-available/000-default.conf
 
@@ -54,11 +56,7 @@ RUN for i in $(seq $PORT_RANGE); do \
     git config --global --add safe.directory /var/www/git/dev_${i}_org; \
     fi; \
     done
-
-# Fix permissions for the repositories
-RUN chown -R www-data:www-data /var/www/git && \
-    chmod -R 775 /var/www/git
-
+    
 # Add post-receive hooks to the bare repositories to push the latest changes to the corresponding working repository
 RUN for i in $(seq $PORT_RANGE); do \
     bare_repo="/var/www/git/dev_${i}_org/hooks"; \
@@ -89,10 +87,6 @@ RUN for i in $(seq $PORT_RANGE); do \
 RUN git config --global user.email "cvcup@gmail.com"
 RUN git config --global user.name "Rakesh Kumar"
 
-# Fix permissions for the repositories and web directories
-RUN chown -R www-data:www-data /var/www/git && chmod -R 775 /var/www/git
-RUN chown -R www-data:www-data /var/www/html && chmod -R 775 /var/www/html
-
 # Create MySQL databases for each instance
 RUN service mariadb start && \
     mysqladmin -u root password '' && \
@@ -101,7 +95,7 @@ RUN service mariadb start && \
                         GRANT ALL PRIVILEGES ON central_database_${i}.* TO 'root'@'localhost';"; \
     done
 
-# Create the Git repository directory and copy the repository
+# Copy node_modules and vendor directories (assuming they exist locally)
 COPY ./node_modules/ /var/www/html/dev_8001_org/node_modules/
 COPY ./vendor/ /var/www/html/dev_8001_org/vendor/
 
@@ -138,11 +132,23 @@ RUN htpasswd -cb /etc/apache2/.htpasswd nexuskul nexuskul
 # Enable necessary Apache modules
 RUN a2enmod cgi alias env ssl rewrite
 
-CMD service mariadb start && mysqladmin -u root password '' && sh -c "apache2ctl -D FOREGROUND & for i in \$(seq $PORT_RANGE); do cd /var/www/html/dev_\${i}_org && ./start.sh; done && pm2 logs"
-
-# Fix permissions for the repositories
-RUN chown -R www-data:www-data /var/www/html && \
-    chmod -R 775 /var/www/html
+# Fix permissions for the repositories and web directories
+RUN chown -R www-data:www-data /var/www/git && chmod -R 775 /var/www/git
+RUN chown -R www-data:www-data /var/www/html && chmod -R 775 /var/www/html
 
 # Expose port 443 for HTTPS
 EXPOSE 443 8000 5173 8000 8001 8002 8003 8004 8005 8006 8007 8008 8009 8010 8011 8012 8013 8014 8015 8016 8017 8018 8019 8020 3000 3001 3002 3003 3004 3005 3006 3007 3008 3009 3010 3011 3012 3013 3014 3015 3016 3017 3018 3019 3020
+
+CMD service mariadb start && mysqladmin -u root password '' && sh -c "apache2ctl -D FOREGROUND & for i in \$(seq $PORT_RANGE); do cd /var/www/html/dev_\${i}_org && ./start.sh; done && pm2 logs"
+
+CMD service mariadb start && \
+    mysqladmin -u root password '' && \
+    for i in $(seq $PORT_RANGE); do \
+        cd /var/www/html/dev_${i}_org && \
+        ./start.sh; \
+        php artisan migrate:central --fresh && \
+        php artisan seed:central && \
+        php artisan migrate:schools --fresh && \
+        php artisan seed:schools; \
+    done && \
+    pm2 logs
