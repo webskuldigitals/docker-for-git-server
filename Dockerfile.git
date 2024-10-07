@@ -6,9 +6,9 @@ ENV PORT_RANGE="8000 8001"
 
 # Install Apache, PHP 8.3 from Sury repository, Git, Node.js, MySQL, and necessary utilities
 RUN apt-get update && apt-get install -y lsb-release apt-transport-https ca-certificates wget && \
-    wget -qO - https://packages.sury.org/php/apt.gpg | tee /etc/apt/trusted.gpg.d/php.gpg && \
+    wget -O - https://packages.sury.org/php/apt.gpg | tee /etc/apt/trusted.gpg.d/php.gpg && \
     echo "deb https://packages.sury.org/php/ $(lsb_release -sc) main" | tee /etc/apt/sources.list.d/php.list && \
-    apt-get update && apt-get install -y \
+    apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     apache2 \
     php8.3 \
     php8.3-cli \
@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y lsb-release apt-transport-https ca-cert
     curl \
     mariadb-server \
     && curl -fsSL https://deb.nodesource.com/setup_16.x | bash - \
-    && apt-get install -y nodejs \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
