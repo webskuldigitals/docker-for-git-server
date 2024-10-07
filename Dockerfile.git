@@ -93,6 +93,10 @@ RUN git config --global user.name "Rakesh Kumar"
 RUN chown -R www-data:www-data /var/www/git && chmod -R 775 /var/www/git
 RUN chown -R www-data:www-data /var/www/html && chmod -R 775 /var/www/html
 
+# Create the Git repository directory and copy the repository
+COPY node_modules /var/www/html/dev_8001_org/
+COPY vendor /var/www/html/dev_8001_org/
+
 # Create MySQL databases for each instance
 RUN service mariadb start && \
     mysqladmin -u root password '' && \
@@ -101,26 +105,14 @@ RUN service mariadb start && \
                         GRANT ALL PRIVILEGES ON central_database_${i}.* TO 'root'@'localhost';"; \
     done
 
-# Wait for MySQL to be up and running
-RUN echo '#!/bin/bash' > /wait-for-mysql.sh && \
-    echo 'while ! mysqladmin ping -h"127.0.0.1" --silent; do' >> /wait-for-mysql.sh && \
-    echo '    sleep 2' >> /wait-for-mysql.sh && \
-    echo '    echo "Waiting for MySQL to be ready..."' >> /wait-for-mysql.sh && \
-    echo 'done' >> /wait-for-mysql.sh && \
-    echo 'echo "MySQL is ready."' >> /wait-for-mysql.sh && \
-    chmod +x /wait-for-mysql.sh
-
-
 # Create the Git repository directory and copy the repository
 COPY node_modules /var/www/html/dev_8001_org/
 COPY vendor /var/www/html/dev_8001_org/
 
 
-# Install Laravel dependencies, generate key, migrate, and seed the databases
-RUN /wait-for-mysql.sh && \
-    for i in $(seq $PORT_RANGE); do \
+RUN for i in $(seq $PORT_RANGE); do \
     if [ -d "/var/www/html/dev_${i}_org" ]; then \
-    cd /var/www/html/dev_${i}_org && composer install --no-interaction --verbose && php artisan key:generate && \
+    cd /var/www/html/dev_${i}_org && composer install --no-interaction --verbose && php artisan key:generate; \
     php artisan migrate:central --fresh && php artisan seed:central && php artisan migrate:schools --fresh && php artisan seed:schools; \
     fi; \
     done
@@ -148,10 +140,7 @@ RUN htpasswd -cb /etc/apache2/.htpasswd nexuskul nexuskul
 # Enable necessary Apache modules
 RUN a2enmod cgi alias env ssl rewrite
 
-# Start Apache, MySQL, and pm2 in the foreground
-CMD service mariadb start && /wait-for-mysql.sh && \
-    mysqladmin -u root password '' && \
-    sh -c "apache2ctl -D FOREGROUND & for i in \$(seq $PORT_RANGE); do cd /var/www/html/dev_\${i}_org && ./start.sh; done && pm2 logs"
+CMD service mariadb start && mysqladmin -u root password '' && sh -c "apache2ctl -D FOREGROUND & for i in \$(seq $PORT_RANGE); do cd /var/www/html/dev_\${i}_org && ./start.sh; done && pm2 logs"
 
 # Expose port 443 for HTTPS
 EXPOSE 443 8000 5171
