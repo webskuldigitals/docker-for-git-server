@@ -4,7 +4,7 @@ FROM debian:bullseye-slim
 # Define port range variable
 ENV PORT_RANGE="8001 8001"
 
-# Install Apache, PHP 8.3 from Sury repository, Git, Node.js, and necessary utilities
+# Install Apache, PHP 8.3 from Sury repository, Git, Node.js, MySQL, and necessary utilities
 RUN apt-get update && apt-get install -y lsb-release apt-transport-https ca-certificates wget && \
     wget -qO - https://packages.sury.org/php/apt.gpg | tee /etc/apt/trusted.gpg.d/php.gpg && \
     echo "deb https://packages.sury.org/php/ $(lsb_release -sc) main" | tee /etc/apt/sources.list.d/php.list && \
@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y lsb-release apt-transport-https ca-cert
     git \
     apache2-utils \
     curl \
+    mariadb-server \
     && curl -fsSL https://deb.nodesource.com/setup_16.x | bash - \
     && apt-get install -y nodejs \
     && apt-get clean \
@@ -77,6 +78,7 @@ RUN for i in $(seq $PORT_RANGE); do \
     fi; \
     if [ ! -f /var/www/html/dev_${i}_org/.env ]; then \
     cp /var/www/html/dev_${i}_org/.env.example /var/www/html/dev_${i}_org/.env; \
+    sed -i "s/DB_DATABASE=.*/DB_DATABASE=central_database_${i}/" /var/www/html/dev_${i}_org/.env; \
     fi; \
     done
 
@@ -87,6 +89,12 @@ RUN git config --global user.name "Rakesh Kumar"
 # Fix permissions for the repositories and web directories
 RUN chown -R www-data:www-data /var/www/git && chmod -R 775 /var/www/git
 RUN chown -R www-data:www-data /var/www/html && chmod -R 775 /var/www/html
+
+# Create MySQL databases for each instance
+RUN service mariadb start && \
+    for i in $(seq $PORT_RANGE); do \
+    mariadb -u root -e "CREATE DATABASE IF NOT EXISTS central_database_${i};"; \
+    done
 
 # Install Laravel dependencies and generate key
 RUN for i in $(seq $PORT_RANGE); do \
@@ -118,8 +126,15 @@ RUN htpasswd -cb /etc/apache2/.htpasswd nexuskul nexuskul
 # Enable necessary Apache modules
 RUN a2enmod cgi alias env ssl rewrite
 
-# Expose port 443 for HTTPS
-EXPOSE 443 8000 3000
+# Start Apache, MySQL, and pm2 in the foreground
+CMD service mariadb start && mysqladmin -u root password '' && sh -c "apache2ctl -D FOREGROUND & for i in \$(seq $PORT_RANGE); do cd /var/www/html/dev_\${i}_org && ./start.sh; done && pm2 logs"
 
-# Start Apache and pm2 in the foreground
-CMD ["sh", "-c", "apache2ctl -D FOREGROUND & for i in $(seq $PORT_RANGE); do cd /var/www/html/dev_${i}_org && ./start.sh; done && pm2 logs"]
+# Install Laravel dependencies and generate key
+RUN for i in $(seq $PORT_RANGE); do \
+    if [ -d "/var/www/html/dev_${i}_org" ]; then \
+    cd /var/www/html/dev_${i}_org && php artisan migrate:central --fresh && php artisan seed:central && php artisan migrate:schools --fresh && php artisan seed:schools; \
+    fi; \
+    done
+
+# Expose port 443 for HTTPS
+EXPOSE 443 8000 5171
