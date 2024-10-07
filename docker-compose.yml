@@ -9,9 +9,16 @@ services:
             - "443:443"
             - "8000:8000"
             - "5171:5171"
+        volumes:
+            - php-vendor:/var/www/html/dev_8001_org/vendor/
+            - node-modules:/var/www/html/dev_8001_org/node_modules/
 
 volumes:
     git-bare:
         driver: local
     git-data:
+        driver: local
+    php-vendor:
+        driver: local
+    node-modules:
         driver: local
