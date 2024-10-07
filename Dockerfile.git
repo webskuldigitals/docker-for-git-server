@@ -2,7 +2,7 @@
 FROM debian:bullseye-slim
 
 # Define port range variable
-ENV PORT_RANGE="8001 8001"
+ENV PORT_RANGE="8000 8001"
 
 # Install Apache, PHP 8.3 from Sury repository, Git, Node.js, MySQL, and necessary utilities
 RUN apt-get update && apt-get install -y lsb-release apt-transport-https ca-certificates wget && \
@@ -117,16 +117,20 @@ RUN for i in $(seq $PORT_RANGE); do \
     cd /var/www/html/dev_${i}_org && npm install; \
     fi; \
     done
-
+    
 # Create a start script to run both npm run dev and php artisan serve using pm2
 RUN for i in $(seq $PORT_RANGE); do \
     if [ -d "/var/www/html/dev_${i}_org" ]; then \
-    cd /var/www/html/dev_${i}_org && \
-    echo 'pm2 start npm --name "npm_dev_${i}" -- run dev' > start.sh && \
-    echo 'pm2 start php --name "artisan_serve_${i}" -- artisan serve --host=0.0.0.0 --port=8000' >> start.sh && \
-    chmod +x start.sh; \
+        cd /var/www/html/dev_${i}_org && \
+        # Calculate the port for Vite by subtracting 5000 from $i
+        vite_port=$((i - 5000)) && \
+        # Assign the Vite server to the calculated port
+        echo "pm2 start npm --name 'npm_dev_${i}' -- run dev -- --port ${vite_port}" > start.sh && \
+        # Use $i as the dynamic port for artisan serve
+        echo "pm2 start php --name 'artisan_serve_${i}' -- artisan serve --host=0.0.0.0 --port=${i}" >> start.sh && \
+        chmod +x start.sh; \
     fi; \
-    done
+done
 
 # Set up HTTP authentication
 RUN htpasswd -cb /etc/apache2/.htpasswd nexuskul nexuskul
@@ -136,5 +140,9 @@ RUN a2enmod cgi alias env ssl rewrite
 
 CMD service mariadb start && mysqladmin -u root password '' && sh -c "apache2ctl -D FOREGROUND & for i in \$(seq $PORT_RANGE); do cd /var/www/html/dev_\${i}_org && ./start.sh; done && pm2 logs"
 
+# Fix permissions for the repositories
+RUN chown -R www-data:www-data /var/www/html && \
+    chmod -R 775 /var/www/html
+
 # Expose port 443 for HTTPS
-EXPOSE 443 8000 5171
+EXPOSE 443 8000 5173 8000 8001 8002 8003 8004 8005 8006 8007 8008 8009 8010 8011 8012 8013 8014 8015 8016 8017 8018 8019 8020 3000 3001 3002 3003 3004 3005 3006 3007 3008 3009 3010 3011 3012 3013 3014 3015 3016 3017 3018 3019 3020

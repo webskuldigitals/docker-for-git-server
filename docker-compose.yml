@@ -7,18 +7,11 @@ services:
         working_dir: /var/www/html/dev_8001_org
         ports:
             - "443:443"
-            - "8000:8000"
-            - "5171:5171"
-        volumes:
-            - php-vendor:/var/www/html/dev_8001_org/vendor/
-            - node-modules:/var/www/html/dev_8001_org/node_modules/
+            - "8000-8020:8000-8020"
+            - "3000-3020:3000-3020"
 
 volumes:
     git-bare:
         driver: local
     git-data:
-        driver: local
-    php-vendor:
-        driver: local
-    node-modules:
         driver: local
