@@ -93,10 +93,6 @@ RUN git config --global user.name "Rakesh Kumar"
 RUN chown -R www-data:www-data /var/www/git && chmod -R 775 /var/www/git
 RUN chown -R www-data:www-data /var/www/html && chmod -R 775 /var/www/html
 
-# Create the Git repository directory and copy the repository
-COPY node_modules /var/www/html/dev_8001_org/
-COPY vendor /var/www/html/dev_8001_org/
-
 # Create MySQL databases for each instance
 RUN service mariadb start && \
     mysqladmin -u root password '' && \
@@ -106,14 +102,12 @@ RUN service mariadb start && \
     done
 
 # Create the Git repository directory and copy the repository
-COPY node_modules /var/www/html/dev_8001_org/
-COPY vendor /var/www/html/dev_8001_org/
-
+COPY ./node_modules/ /var/www/html/dev_8001_org/node_modules/
+COPY ./vendor/ /var/www/html/dev_8001_org/vendor/
 
 RUN for i in $(seq $PORT_RANGE); do \
     if [ -d "/var/www/html/dev_${i}_org" ]; then \
     cd /var/www/html/dev_${i}_org && composer install --no-interaction --verbose && php artisan key:generate; \
-    php artisan migrate:central --fresh && php artisan seed:central && php artisan migrate:schools --fresh && php artisan seed:schools; \
     fi; \
     done
 
