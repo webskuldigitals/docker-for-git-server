@@ -70,8 +70,10 @@ RUN for i in $(seq $PORT_RANGE); do \
 # Loop to clone the repository if it doesn't already exist
 RUN for i in $(seq $PORT_RANGE); do \
     if [ ! -d "/var/www/html/dev_${i}_org/modules" ]; then \
-    git clone /var/www/git/dev_${i}_org /var/www/html/dev_${i}_org//modules; \
-    git config --global --add safe.directory /var/www/html/dev_${i}_org//modules; \
+    git clone /var/www/git/nexuskul-core.git /var/www/html/dev_${i}_org; \
+    git clone /var/www/git/dev_${i}_org /var/www/html/dev_${i}_org/modules; \
+    git config --global --add safe.directory /var/www/html/dev_${i}_org/modules; \
+    git config --global --add safe.directory /var/www/html/dev_${i}_org; \
     fi; \
     if [ ! -f /var/www/html/dev_${i}_org/.env ]; then \
     cp /var/www/html/dev_${i}_org/.env.example /var/www/html/dev_${i}_org/.env; \
